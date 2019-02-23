@@ -34,6 +34,8 @@ import Moya
 class CardViewController: UIViewController {
   // - MARK: - Dependencies
   private var comic: Comic?
+  private let provider = MoyaProvider<Imgur>()
+  private var uploadResult: UploadResult?
 
   // - MARK: - Outlets
   @IBOutlet weak private var lblTitle: UILabel!
@@ -87,10 +89,60 @@ extension CardViewController {
     }
 
     progressBar.progress = 0.0
+    
+    let card = snapCard()
+    provider.request(.upload(card),
+      callbackQueue: DispatchQueue.main,
+      progress: { [weak self] progress in
+        self?.progressBar.setProgress(Float(progress.progress), animated: true)
+      },
+      completion: { [weak self] response in
+        guard let self = self else { return }
+        
+        UIView.animate(withDuration: 0.15, animations: {
+          self.viewUpload.alpha = 0.0
+          self.btnShare.alpha = 0.0
+        })
+        
+        switch response {
+        case .success(let result):
+          do {
+            let upload = try result.map(ImgurResponse<UploadResult>.self)
+            self.uploadResult = upload.data
+            self.btnDelete.alpha = 1.0
+            self.presentShare(image: card, url: upload.data.link)
+          } catch {
+            self.presentError()
+          }
+        case .failure:
+          self.presentError()
+        }
+    })
   }
 
   @IBAction private func deleteCard() {
-
+    guard let uploadResult = uploadResult else {
+      return
+    }
+    
+    btnDelete.isEnabled = false
+    provider.request(.delete(uploadResult.deletehash)) { [weak self] response in
+      guard let self = self else { return }
+      
+      let message: String
+      switch response {
+      case .success:
+        message = "Delete Successfully!"
+        self.btnDelete.alpha = 0.0
+      case .failure:
+        message = "Failed deleting card! Try again later."
+        self.btnDelete.isEnabled = true
+      }
+      
+      let alert = UIAlertController(title: message, message: nil, preferredStyle: .alert)
+      alert.addAction(UIAlertAction(title: "Done", style: .cancel))
+      self.present(alert, animated: true, completion: nil)
+    }
   }
 }
 
